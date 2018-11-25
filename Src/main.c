@@ -59,8 +59,6 @@
 /* Private variables ---------------------------------------------------------*/
 DAC_HandleTypeDef hdac1;
 
-TIM_HandleTypeDef htim3;
-
 DFSDM_Filter_HandleTypeDef hdfsdm1_filter0;
 DFSDM_Filter_HandleTypeDef hdfsdm1_filter1;
 DFSDM_Channel_HandleTypeDef hdfsdm1_channel1;
@@ -112,7 +110,6 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_DFSDM1_Init(void);
 static void MX_DAC1_Init(void);
-static void MX_TIM3_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* User defined functions */
@@ -173,25 +170,12 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_DFSDM1_Init();
-	MX_TIM3_Init();
   MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
   /* USER CODE END 2 */
 
-	/* Write to the QSPI memory */	
-	/*
-	i = 0;
-	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
-		for(i = 0; i < 32000; i++){
-			C4Sample = sine_wave_gen(C4Freq, i);
-			//G4Sample = sine_wave_gen(G4Freq, i);
-			
-			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec0 + i * 4, 4);
-			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec1 + i * 4, 4);	
-		}
-	}*/
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -206,8 +190,8 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  //osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  //defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -220,7 +204,7 @@ int main(void)
 	//================================================================================== 
 
   /* Start scheduler */
-  osKernelStart();
+  //osKernelStart();
   
   /* We should never get here as control is now taken by the scheduler */
 
@@ -235,8 +219,19 @@ int main(void)
 	*/
 	//===================================================================================
 	
-	// Read from QSPI memory and play the sound using SysTick interrupts
-	/*
+	/* Write to the QSPI memory */	
+	i = 0;
+	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
+		for(i = 0; i < 32000; i++){
+			C4Sample = sine_wave_gen(C4Freq, i);
+			G4Sample = sine_wave_gen(G4Freq, i);
+			
+			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec0 + i * 4, 4);
+			BSP_QSPI_Write((uint8_t *) &G4Sample, addr_sec1 + i * 4, 4);	
+		}
+	}
+	
+	// Read from QSPI memory and play the sound
 	i = 0;
 	while (1)
   {
@@ -260,7 +255,7 @@ int main(void)
 				G4Sample = 0;
 			}
 		}
-	}*/
+	}
   /* USER CODE END 3 */
 }
 float32_t sine_wave_gen(int frequency, int counter){
@@ -275,28 +270,6 @@ void mix_sound(void){
 	// perform the mixing
 	x_matrix[0] = s_matrix[0] * a_matrix[0] + s_matrix[1] * a_matrix[1];
 	x_matrix[1] = s_matrix[0] * a_matrix[2] + s_matrix[1] * a_matrix[3];
-}
-
-/* StartDefaultTask function */
-void StartDefaultTask(void const * argument)
-{
-
-  /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {		
-		i = 0;		
-		if(tim3_flag){		
-			tim3_flag = 0;
-			
-			C4Sample = sine_wave_gen(C4Freq, i);
-			
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, C4Sample);
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, C4Sample);
-			i++;
-		}		
-  }
-  /* USER CODE END 5 */ 
 }
 
 /**
@@ -409,39 +382,6 @@ static void MX_DAC1_Init(void)
     */
   sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_DISABLE;
   if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_2) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-}
-
-/* TIM3 init function */
-static void MX_TIM3_Init(void)
-{
-
-  TIM_ClockConfigTypeDef sClockSourceConfig;
-  TIM_MasterConfigTypeDef sMasterConfig;
-
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 160;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 100;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
@@ -561,6 +501,18 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
+/* StartDefaultTask function */
+void StartDefaultTask(void const * argument)
+{
+
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {		
+  }
+  /* USER CODE END 5 */ 
+}
+
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM17 interrupt took place, inside
@@ -572,8 +524,7 @@ static void MX_GPIO_Init(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-	tim3_flag = 1;
-	
+
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM17) {
     HAL_IncTick();
