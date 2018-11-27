@@ -70,42 +70,6 @@ UART_HandleTypeDef huart1;
 
 osThreadId defaultTaskHandle;
 
-/* USER CODE BEGIN PV */
-/* Private variables ---------------------------------------------------------*/
-int tim3_flag = 0;
-int counter = 0;
-int i, store;
-
-/**
- This variable selects which sound to play.
- 0: The testing sound with 440Hz
- 1: mix
- 2: C4 to left and G4 to right
- */
-
-float testFreq = 261.63;
-const float C4Freq = 261.63;
-const float G4Freq = 392;
-
-const uint32_t addr_sec0 = 0x00000000;
-const uint32_t addr_sec1 = 0x00020000;
-
-float sampleTime = 2; //2 sec
-float sampleFreq = 16000;
-
-float32_t sineWaveSample, rad;
-float32_t G4Sample, C4Sample;
-float32_t mixedSample;
-
-/* Variables to perform sound mixing */
-float32_t a_matrix[4] = {1, 1, 1, 1};
-float32_t s_matrix[2];
-float32_t x_matrix[2];
-
-/* GLOBAL VARIABLE FOR THE SOFTWARE FLAG */
-int softFlag = 0;
-/* USER CODE END PV */
-
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -115,30 +79,60 @@ static void MX_DAC1_Init(void);
 static void MX_TIM3_Init(void);
 void StartDefaultTask(void const * argument);
 
+/* USER CODE BEGIN PV */
+/* Constant variables ------------------------------------------------------*/
+float testFreq = 261.63;
+const float C4Freq = 261.63;
+const float G4Freq = 392;
+const uint32_t addr_sec0 = 0x00000000;
+const uint32_t addr_sec1 = 0x00020000;
+const float pi = 3.14159;
+const float EPSILON = 0.0001;
+const int MAX_NUM_ITERATIONS = 1000;
+
+/* Flag variables ---------------------------------------------------------*/
+int tim3_flag = 0;
+int softFlag = 0;
+int store;
+
+/* Counter variables ------------------------------------------------------*/
+int i;
+int counter = 0;
+
+/* Variables for sound generations ----------------------------------------*/
+float sampleTime = 2; //2 sec
+float sampleFreq = 16000;
+
+float32_t sineWaveSample, rad;
+float32_t G4Sample, C4Sample;
+float32_t mixedSample;
+
+/* Declaration of arrays to perform sound mixing ---------------------------- */
+float32_t a_matrix[4] = {1, 1, 1, 1};
+float32_t s_matrix[2];
+float32_t x_matrix[2];
+
+/* Matrix instances declaration -------------------------------------------*/
+arm_matrix_instance_f32 mixed_sig;
+arm_matrix_instance_f32 orig_sig;
+arm_matrix_instance_f32 mixing_mat;
+
+/* Matrices created during calculation for covariance ---------------------------*/
+arm_matrix_instance_f32 E, D;
+
 /* User defined functions */
+/* Functions for sound generation ---------------------------------------------*/
 float32_t sine_wave_gen(int frequency, int counter);
 void mix_sound(void);
 
-/* USER CODE BEGIN PFP */
-/* Private function prototypes -----------------------------------------------*/
+void fast_ica(arm_matrix_instance_f32 mixed_sig);
+void find_convariance(arm_matrix_instance_f32 vectors);
 
-/* Private global constants  -----------------------------------------------*/
-const float pi=3.14159;
+/* USER CODE END PV */
 
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
-
-int fputc(int ch, FILE *f) {
-  while (HAL_OK != HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, 30000));
-  return ch;
-}
-int fgetc(FILE *f) {
-  uint8_t ch = 0;
-  while (HAL_OK != HAL_UART_Receive(&huart1, (uint8_t *)&ch, 1, 30000));
-  return ch;
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -183,7 +177,7 @@ int main(void)
   /* USER CODE END 2 */
 
 	/* Write to the QSPI memory */
-	/*
+	
 	i = 0;
 	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
 		for(i = 0; i < 32000; i++){
@@ -193,7 +187,7 @@ int main(void)
 			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec0 + i * 4, 4);
 			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec1 + i * 4, 4);
 		}
-	}*/
+	}
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -240,34 +234,56 @@ int main(void)
   while(1){
 
   }
-	// Read from QSPI memory and play the sound using SysTick interrupts
-	/*
-	i = 0;
-	while (1)
-  {
-
-		if(softFlag){
-			softFlag = 0;
-
-			BSP_QSPI_Read((uint8_t *)&s_matrix[0], addr_sec0 + i * 4, 4);
-			BSP_QSPI_Read((uint8_t *)&s_matrix[1], addr_sec1 + i * 4, 4);
-
-			mix_sound();
-
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, x_matrix[0]);
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, s_matrix[1]);
-			i++;
-
-
-			if (i >= 32000){
-				i = 0;
-				C4Sample = 0;
-				G4Sample = 0;
-			}
-		}
-	}*/
   /* USER CODE END 3 */
 }
+
+/**
+	*	This is the function performing Fast ICA.
+	*	
+	*	Arguments: arm matrix instance of the mixed signal.
+	*	The matrix is a 2-by-N matrix, where N is to be determined by the size of the sample array
+	*
+	*	@retval: TBD 
+	*/
+void fast_ica(arm_matrix_instance_f32 mixed_sig){
+	// Performing the pre-processing stage of ICA.
+	// First step is to re-center the sample by removing the mean value.
+	uint16_t cols = mixed_sig.numCols;
+	uint16_t mean[2] = {0, 0};
+	
+	for(i = 0; i < cols; i++){
+		mean[0] += mixed_sig.pData[i];
+		mean[1] += mixed_sig.pData[cols + i];
+	}
+	
+	mean[0] = mean[0] / cols;
+	mean[1] = mean[1] / cols;
+	
+	for(i = 0; i < cols; i++){
+		mixed_sig.pData[i] -= mean[0];
+		mixed_sig.pData[cols + i] -= mean[1];
+	}
+	
+	// The samples have been re-centered.
+	// Perform whitening of the samples. 
+	
+}
+
+/**
+	*	This function finds the covariance, a diagonal matrix D containing eigenvalues.
+	*	and a full matrix containing the eigenvectors.
+	* 	
+	*	@retval: nothing to return. values are directly modified using pointers
+	*/
+void find_covariance(arm_matrix_instance_f32 trans_mixed_sig){
+	float32_t e_matrix[4], d_matrix[4];
+	uint16_t rows = 2;
+	uint16_t cols = 2;	
+	
+	arm_mat_init_f32(&E, rows, cols, &e_matrix[0]);
+	arm_mat_init_f32(&D, rows, cols, &d_matrix[0]);
+}
+
 float32_t sine_wave_gen(int frequency, int counter){
 	rad = 2 * pi * frequency * counter / sampleFreq;
 
@@ -302,6 +318,16 @@ void StartDefaultTask(void const * argument)
 		}
   }
   /* USER CODE END 5 */
+}
+
+int fputc(int ch, FILE *f) {
+  while (HAL_OK != HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, 30000));
+  return ch;
+}
+int fgetc(FILE *f) {
+  uint8_t ch = 0;
+  while (HAL_OK != HAL_UART_Receive(&huart1, (uint8_t *)&ch, 1, 30000));
+  return ch;
 }
 
 /**
@@ -428,7 +454,7 @@ static void MX_TIM3_Init(void)
   TIM_MasterConfigTypeDef sMasterConfig;
 
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 48.924;
+  htim3.Init.Prescaler = 49;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 100;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
