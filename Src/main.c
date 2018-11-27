@@ -6,41 +6,41 @@
   ******************************************************************************
   * This notice applies to any and all portions of this file
   * that are not between comment pairs USER CODE BEGIN and
-  * USER CODE END. Other portions of this file, whether 
+  * USER CODE END. Other portions of this file, whether
   * inserted by the user or by software development tools
   * are owned by their respective copyright owners.
   *
-  * Copyright (c) 2018 STMicroelectronics International N.V. 
+  * Copyright (c) 2018 STMicroelectronics International N.V.
   * All rights reserved.
   *
-  * Redistribution and use in source and binary forms, with or without 
+  * Redistribution and use in source and binary forms, with or without
   * modification, are permitted, provided that the following conditions are met:
   *
-  * 1. Redistribution of source code must retain the above copyright notice, 
+  * 1. Redistribution of source code must retain the above copyright notice,
   *    this list of conditions and the following disclaimer.
   * 2. Redistributions in binary form must reproduce the above copyright notice,
   *    this list of conditions and the following disclaimer in the documentation
   *    and/or other materials provided with the distribution.
-  * 3. Neither the name of STMicroelectronics nor the names of other 
-  *    contributors to this software may be used to endorse or promote products 
+  * 3. Neither the name of STMicroelectronics nor the names of other
+  *    contributors to this software may be used to endorse or promote products
   *    derived from this software without specific written permission.
-  * 4. This software, including modifications and/or derivative works of this 
+  * 4. This software, including modifications and/or derivative works of this
   *    software, must execute solely and exclusively on microcontroller or
   *    microprocessor devices manufactured by or for STMicroelectronics.
-  * 5. Redistribution and use of this software other than as permitted under 
-  *    this license is void and will automatically terminate your rights under 
-  *    this license. 
+  * 5. Redistribution and use of this software other than as permitted under
+  *    this license is void and will automatically terminate your rights under
+  *    this license.
   *
-  * THIS SOFTWARE IS PROVIDED BY STMICROELECTRONICS AND CONTRIBUTORS "AS IS" 
-  * AND ANY EXPRESS, IMPLIED OR STATUTORY WARRANTIES, INCLUDING, BUT NOT 
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+  * THIS SOFTWARE IS PROVIDED BY STMICROELECTRONICS AND CONTRIBUTORS "AS IS"
+  * AND ANY EXPRESS, IMPLIED OR STATUTORY WARRANTIES, INCLUDING, BUT NOT
+  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
   * PARTICULAR PURPOSE AND NON-INFRINGEMENT OF THIRD PARTY INTELLECTUAL PROPERTY
-  * RIGHTS ARE DISCLAIMED TO THE FULLEST EXTENT PERMITTED BY LAW. IN NO EVENT 
+  * RIGHTS ARE DISCLAIMED TO THE FULLEST EXTENT PERMITTED BY LAW. IN NO EVENT
   * SHALL STMICROELECTRONICS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
   * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, 
-  * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF 
-  * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
+  * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+  * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+  * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
   * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
   * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   *
@@ -58,6 +58,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 DAC_HandleTypeDef hdac1;
+
+TIM_HandleTypeDef htim3;
 
 DFSDM_Filter_HandleTypeDef hdfsdm1_filter0;
 DFSDM_Filter_HandleTypeDef hdfsdm1_filter1;
@@ -110,6 +112,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_DFSDM1_Init(void);
 static void MX_DAC1_Init(void);
+static void MX_TIM3_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* User defined functions */
@@ -146,7 +149,7 @@ int fgetc(FILE *f) {
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	
+
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -170,12 +173,27 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_DFSDM1_Init();
+	MX_TIM3_Init();
   MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+	
+	HAL_TIM_Base_Start_IT(&htim3);
   /* USER CODE END 2 */
 
+	/* Write to the QSPI memory */
+	/*
+	i = 0;
+	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
+		for(i = 0; i < 32000; i++){
+			C4Sample = sine_wave_gen(C4Freq, i);
+			//G4Sample = sine_wave_gen(G4Freq, i);
+
+			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec0 + i * 4, 4);
+			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec1 + i * 4, 4);
+		}
+	}*/
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -190,8 +208,8 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  //osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
-  //defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -200,76 +218,90 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
-	
-	//================================================================================== 
+
+	//==================================================================================
 
   /* Start scheduler */
-  //osKernelStart();
-  
+  osKernelStart();
+
   /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	
+
 	//===================================================================================
 	/*
-	As for the Quad-SPI flush memory, please refer to 
+	As for the Quad-SPI flush memory, please refer to
 	https://www.st.com/content/ccc/resource/technical/document/application_note/group0/b0/7e/46/a8/5e/c1/48/01/DM00227538/files/DM00227538.pdf/jcr:content/translations/en.DM00227538.pdf
 	starting from p35
 	*/
 	//===================================================================================
-	
-	/* Write to the QSPI memory */	
-	i = 0;
-	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
-		for(i = 0; i < 32000; i++){
-			C4Sample = sine_wave_gen(C4Freq, i);
-			G4Sample = sine_wave_gen(G4Freq, i);
-			
-			BSP_QSPI_Write((uint8_t *) &C4Sample, addr_sec0 + i * 4, 4);
-			BSP_QSPI_Write((uint8_t *) &G4Sample, addr_sec1 + i * 4, 4);	
-		}
-	}
-	
-	// Read from QSPI memory and play the sound
+
+  while(1){
+
+  }
+	// Read from QSPI memory and play the sound using SysTick interrupts
+	/*
 	i = 0;
 	while (1)
   {
-	
-		if(softFlag){		
+
+		if(softFlag){
 			softFlag = 0;
-			
+
 			BSP_QSPI_Read((uint8_t *)&s_matrix[0], addr_sec0 + i * 4, 4);
 			BSP_QSPI_Read((uint8_t *)&s_matrix[1], addr_sec1 + i * 4, 4);
-			
+
 			mix_sound();
-			
+
 			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, x_matrix[0]);
 			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, s_matrix[1]);
 			i++;
-			
-			
+
+
 			if (i >= 32000){
 				i = 0;
 				C4Sample = 0;
 				G4Sample = 0;
 			}
 		}
-	}
+	}*/
   /* USER CODE END 3 */
 }
 float32_t sine_wave_gen(int frequency, int counter){
 	rad = 2 * pi * frequency * counter / sampleFreq;
-	
+
 	// Here we should scale the raw data to be 8 bit, so that we need to time it by 128 (2^8)
 	// In addition, since the range of raw data is (-1, 1), we need to add it by 1
-	return (arm_sin_f32(rad) + 1) * 64;	
+	return (arm_sin_f32(rad) + 1) * 64;
 }
 
 void mix_sound(void){
 	// perform the mixing
 	x_matrix[0] = s_matrix[0] * a_matrix[0] + s_matrix[1] * a_matrix[1];
 	x_matrix[1] = s_matrix[0] * a_matrix[2] + s_matrix[1] * a_matrix[3];
+}
+
+/* StartDefaultTask function */
+void StartDefaultTask(void const * argument)
+{
+
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  i = 0;
+  for(;;)
+  {
+		if(tim3_flag){
+			tim3_flag = 0;
+
+			C4Sample = sine_wave_gen(G4Freq, i);
+
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, C4Sample);
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, C4Sample);
+			i++;
+		}
+  }
+  /* USER CODE END 5 */
 }
 
 /**
@@ -302,7 +334,7 @@ void SystemClock_Config(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**Initializes the CPU, AHB and APB busses clocks 
+    /**Initializes the CPU, AHB and APB busses clocks
     */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -333,18 +365,18 @@ void SystemClock_Config(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**Configure the main internal regulator output voltage 
+    /**Configure the main internal regulator output voltage
     */
   if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
-  /**Configure the Systick interrupt time 
+  /**Configure the Systick interrupt time
   */
   HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 16000);
 
-    /**Configure the Systick 
+    /**Configure the Systick
     */
   HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
@@ -358,7 +390,7 @@ static void MX_DAC1_Init(void)
 
   DAC_ChannelConfTypeDef sConfig;
 
-    /**DAC Initialization 
+    /**DAC Initialization
     */
   hdac1.Instance = DAC1;
   if (HAL_DAC_Init(&hdac1) != HAL_OK)
@@ -366,7 +398,7 @@ static void MX_DAC1_Init(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**DAC channel OUT1 config 
+    /**DAC channel OUT1 config
     */
   sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
   sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
@@ -378,10 +410,43 @@ static void MX_DAC1_Init(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**DAC channel OUT2 config 
+    /**DAC channel OUT2 config
     */
   sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_DISABLE;
   if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_2) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* TIM3 init function */
+static void MX_TIM3_Init(void)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig;
+  TIM_MasterConfigTypeDef sMasterConfig;
+
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 48.924;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 100;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
@@ -501,18 +566,6 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* StartDefaultTask function */
-void StartDefaultTask(void const * argument)
-{
-
-  /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {		
-  }
-  /* USER CODE END 5 */ 
-}
-
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM17 interrupt took place, inside
@@ -524,6 +577,7 @@ void StartDefaultTask(void const * argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
+	//tim3_flag = 1;
 
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM17) {
@@ -559,7 +613,7 @@ void _Error_Handler(char *file, int line)
   * @retval None
   */
 void assert_failed(uint8_t* file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */

@@ -39,6 +39,7 @@
 /* USER CODE BEGIN 0 */
 extern int tim3_flag;
 extern int softFlag;
+extern TIM_HandleTypeDef htim3;
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -46,7 +47,7 @@ extern int softFlag;
 extern TIM_HandleTypeDef htim17;
 
 /******************************************************************************/
-/*            Cortex-M4 Processor Interruption and Exception Handlers         */ 
+/*            Cortex-M4 Processor Interruption and Exception Handlers         */
 /******************************************************************************/
 
 /**
@@ -145,6 +146,20 @@ void DebugMon_Handler(void)
   /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
   /* USER CODE END DebugMonitor_IRQn 1 */
+}
+
+/**
+* @brief This function handles TIM3 global interrupt.
+*/
+void TIM3_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM3_IRQn 0 */
+
+  /* USER CODE END TIM3_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim3);
+  /* USER CODE BEGIN TIM3_IRQn 1 */
+	tim3_flag = 1;
+  /* USER CODE END TIM3_IRQn 1 */
 }
 
 /**
